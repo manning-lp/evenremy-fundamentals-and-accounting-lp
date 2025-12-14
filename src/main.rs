@@ -129,8 +129,8 @@ fn main() {
     let mut tx_log = vec![];
 
     // Deposit an amount to each account
-    for signer in &[bob, alice, charlie] {
-        let status = ledger.deposit(*signer, initial_amount);
+    for signer in [bob, alice, charlie] {
+        let status = ledger.deposit(signer, initial_amount);
         println!("Depositing {} for {}: {:?}", signer, initial_amount, status);
         // Add the resulting transaction to a list of transactions
         // .unwrap() will crash the program if the status is an error.
