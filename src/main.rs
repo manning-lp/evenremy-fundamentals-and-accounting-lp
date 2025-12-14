@@ -182,7 +182,11 @@ fn main() {
     tx_log.push(tx);
     println!("Ledger maxed: {:?}", ledger);
     let expectedAmount = *ledger.accounts.get(alice).unwrap();
-    let e =ledger.send(alice, bob, 1000).unwrap_err();
+    let e = ledger.send(alice, bob, 1000).unwrap_err();
     println!("send error: {:?}", e);
-    println!("alice refunded: {}, bob untouched: {}", *ledger.accounts.get(alice).unwrap() == expectedAmount, *ledger.accounts.get(bob).unwrap() == expectedAmount);
+    println!(
+        "alice refunded: {}, bob untouched: {}",
+        *ledger.accounts.get(alice).unwrap() == expectedAmount,
+        *ledger.accounts.get(bob).unwrap() == expectedAmount
+    );
 }
