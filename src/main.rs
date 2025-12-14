@@ -1,3 +1,4 @@
+use crate::AccountingError::AccountUnderFunded;
 use std::collections::HashMap;
 
 /// An application-specific error type
@@ -12,8 +13,8 @@ enum AccountingError {
 /// when they are applied in the same sequence to an empty state.
 #[derive(Debug)]
 pub enum Tx {
-    Deposit{account: String, amount: u64},
-    Withdraw{account: String, amount: u64}
+    Deposit { account: String, amount: u64 },
+    Withdraw { account: String, amount: u64 },
 }
 
 /// A type for managing accounts and their current currency balance
@@ -63,7 +64,21 @@ impl Accounts {
     /// # Errors
     /// Attempted overflow
     pub fn withdraw(&mut self, signer: &str, amount: u64) -> Result<Tx, AccountingError> {
-        todo!();
+        if let Some(account) = self.accounts.get_mut(signer) {
+            account
+                .checked_sub(amount)
+                .and_then(|r| {
+                    *account = r;
+                    Some(r)
+                })
+                .ok_or(AccountUnderFunded(signer.to_string(), amount))
+                .map(|_| Tx::Withdraw {
+                    account: signer.to_string(),
+                    amount,
+                })
+        } else {
+            Err(AccountingError::AccountNotFound(signer.to_string()))
+        }
     }
 
     /// Withdraws the amount from the sender account and deposits it in the recipient account.
@@ -76,7 +91,21 @@ impl Accounts {
         recipient: &str,
         amount: u64,
     ) -> Result<(Tx, Tx), AccountingError> {
-        todo!();
+        if let Some(_) = self.accounts.get_mut(sender) {
+            if let Some(_) = self.accounts.get_mut(recipient) {
+                let (Ok(withdraw), Ok(deposit)) = (
+                    self.withdraw(sender, amount),
+                    self.deposit(recipient, amount),
+                ) else {
+                    panic!()
+                };
+                Ok((withdraw, deposit))
+            } else {
+                Err(AccountingError::AccountNotFound(recipient.to_string()))
+            }
+        } else {
+            Err(AccountingError::AccountNotFound(sender.to_string()))
+        }
     }
 }
 
