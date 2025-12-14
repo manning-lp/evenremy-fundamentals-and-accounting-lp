@@ -91,21 +91,25 @@ impl Accounts {
         recipient: &str,
         amount: u64,
     ) -> Result<(Tx, Tx), AccountingError> {
-        if let Some(_) = self.accounts.get_mut(sender) {
-            if let Some(_) = self.accounts.get_mut(recipient) {
-                let (Ok(withdraw), Ok(deposit)) = (
-                    self.withdraw(sender, amount),
-                    self.deposit(recipient, amount),
-                ) else {
-                    panic!()
-                };
-                Ok((withdraw, deposit))
-            } else {
-                Err(AccountingError::AccountNotFound(recipient.to_string()))
-            }
-        } else {
-            Err(AccountingError::AccountNotFound(sender.to_string()))
-        }
+        let Some(_) = self.accounts.get_mut(sender) else {
+            return Err(AccountingError::AccountNotFound(sender.to_string()));
+        };
+        let Some(_) = self.accounts.get_mut(recipient) else {
+            return Err(AccountingError::AccountNotFound(recipient.to_string()));
+        };
+        let Ok(withdraw) = self.withdraw(sender, amount) else {
+            return Err(AccountingError::AccountUnderFunded(
+                sender.to_string(),
+                amount,
+            ));
+        };
+        let Ok(deposit) = self.deposit(recipient, amount) else {
+            return Err(AccountingError::AccountOverFunded(
+                recipient.to_string(),
+                amount,
+            ));
+        };
+        Ok((withdraw, deposit))
     }
 }
 
