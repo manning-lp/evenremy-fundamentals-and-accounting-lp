@@ -104,6 +104,8 @@ impl Accounts {
             ));
         };
         let Ok(deposit) = self.deposit(recipient, amount) else {
+            // return the amount to sender
+            self.deposit(sender, amount)?;
             return Err(AccountingError::AccountOverFunded(
                 recipient.to_string(),
                 amount,
@@ -172,4 +174,15 @@ fn main() {
     // {:?} prints the Debug implementation, {:#?} pretty-prints it
     println!("Ledger empty: {:?}", ledger);
     println!("The TX log: {:#?}", tx_log);
+
+    // add max u64 to alice and bob
+    let tx = ledger.deposit(alice, u64::MAX).unwrap();
+    tx_log.push(tx);
+    let tx = ledger.deposit(bob, u64::MAX).unwrap();
+    tx_log.push(tx);
+    println!("Ledger maxed: {:?}", ledger);
+    let expectedAmount = *ledger.accounts.get(alice).unwrap();
+    let e =ledger.send(alice, bob, 1000).unwrap_err();
+    println!("send error: {:?}", e);
+    println!("alice refunded: {}, bob untouched: {}", *ledger.accounts.get(alice).unwrap() == expectedAmount, *ledger.accounts.get(bob).unwrap() == expectedAmount);
 }
