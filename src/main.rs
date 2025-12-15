@@ -122,7 +122,7 @@ fn read_from_stdin(label: &str) -> String {
     let mut line = String::new();
     stdin().read_line(&mut line).unwrap_or_else(|e| {
         line = "".to_string();
-        return 0
+        return 0;
     });
 
     line.trim().to_string()
@@ -130,8 +130,23 @@ fn read_from_stdin(label: &str) -> String {
 
 fn main() {
     loop {
-        let cmd = read_from_stdin("cmd:");
-        println!("{}",cmd)
+        let line = read_from_stdin("cmd:");
+        let cmd: Vec<&str> = line.split(" ").collect();
+        match cmd.as_slice() {
+            ["deposit", amount, "to", signer] => {
+                let Ok(amount) = amount.parse::<u64>() else {
+                    println!("failed to parse amount {}", amount);
+                    continue;
+                };
+
+            }
+            ["withdraw", amount, "from", signer] => {}
+            ["send"] => {}
+            _ => println!(
+                "Command '{}' not found",
+                cmd.first().unwrap_or_else(|| { &"" })
+            ),
+        }
     }
 
     // println!("Hello, accounting world!");
