@@ -129,24 +129,35 @@ fn read_from_stdin(label: &str) -> String {
 }
 
 fn main() {
+    let mut ledger = Accounts::new();
+    let mut tx_log = vec![];
     loop {
         let line = read_from_stdin("cmd:");
         let cmd: Vec<&str> = line.split(" ").collect();
         match cmd.as_slice() {
             ["deposit", amount, "to", signer] => {
                 let Ok(amount) = amount.parse::<u64>() else {
-                    println!("failed to parse amount {}", amount);
+                    println!("failed to parse '{}'", amount);
                     continue;
                 };
-
+                match ledger.deposit(signer, amount) {
+                    Ok(tx) => tx_log.push(tx),
+                    Err(e) => {
+                        eprintln!("{:?}", e)
+                    }
+                }
             }
             ["withdraw", amount, "from", signer] => {}
             ["send"] => {}
+            ["quit"] => {
+                return;
+            }
             _ => println!(
                 "Command '{}' not found",
                 cmd.first().unwrap_or_else(|| { &"" })
             ),
         }
+        println!("{:?}", ledger)
     }
 
     // println!("Hello, accounting world!");
