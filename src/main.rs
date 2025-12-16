@@ -1,26 +1,8 @@
 mod accounts;
+mod errors;
+mod tx;
 
 use std::io::{stdin, Write};
-
-mod error {
-    /// An application-specific error type
-    #[derive(Debug)]
-    pub(crate) enum AccountingError {
-        AccountNotFound(String),
-        AccountUnderFunded(String, u64),
-        AccountOverFunded(String, u64),
-    }
-}
-
-mod tx {
-    /// A transaction type. Transactions should be able to rebuild a ledger's state
-    /// when they are applied in the same sequence to an empty state.
-    #[derive(Debug)]
-    pub enum Tx {
-        Deposit { account: String, amount: u64 },
-        Withdraw { account: String, amount: u64 },
-    }
-}
 
 fn read_from_stdin(label: &str) -> String {
     print!("{}", label);
@@ -35,7 +17,7 @@ fn read_from_stdin(label: &str) -> String {
 }
 
 fn main() {
-    let mut ledger = accounts::accounts::Accounts::new();
+    let mut ledger = accounts::Accounts::new();
     let mut tx_log = vec![];
     loop {
         let line = read_from_stdin("cmd: ");
@@ -65,7 +47,7 @@ fn main() {
 }
 
 fn cmd_send(
-    ledger: &mut accounts::accounts::Accounts,
+    ledger: &mut accounts::Accounts,
     tx_log: &mut Vec<tx::Tx>,
     amount: &&str,
     from: &&str,
@@ -84,7 +66,7 @@ fn cmd_send(
 }
 
 fn cmd_deposit(
-    ledger: &mut accounts::accounts::Accounts,
+    ledger: &mut accounts::Accounts,
     tx_log: &mut Vec<tx::Tx>,
     amount: &&str,
     signer: &&str,
@@ -102,9 +84,9 @@ fn cmd_deposit(
 }
 
 fn cmd_withdraw(
-    ledger: &mut accounts::accounts::Accounts,
+    ledger: &mut accounts::Accounts,
     tx_log: &mut Vec<tx::Tx>,
-    amount: &&str,
+    amount: &&str, // todo get rid of one ref
     signer: &&str,
 ) {
     if let Ok(amount) = amount.parse::<u64>() {
