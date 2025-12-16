@@ -1,21 +1,24 @@
-use crate::AccountingError::AccountUnderFunded;
 use std::collections::HashMap;
 use std::io::{stdin, Write};
 
-/// An application-specific error type
-#[derive(Debug)]
-enum AccountingError {
-    AccountNotFound(String),
-    AccountUnderFunded(String, u64),
-    AccountOverFunded(String, u64),
+mod error {
+    /// An application-specific error type
+    #[derive(Debug)]
+    pub(crate) enum AccountingError {
+        AccountNotFound(String),
+        AccountUnderFunded(String, u64),
+        AccountOverFunded(String, u64),
+    }
 }
 
-/// A transaction type. Transactions should be able to rebuild a ledger's state
-/// when they are applied in the same sequence to an empty state.
-#[derive(Debug)]
-pub enum Tx {
-    Deposit { account: String, amount: u64 },
-    Withdraw { account: String, amount: u64 },
+mod tx {
+    /// A transaction type. Transactions should be able to rebuild a ledger's state
+    /// when they are applied in the same sequence to an empty state.
+    #[derive(Debug)]
+    pub enum Tx {
+        Deposit { account: String, amount: u64 },
+        Withdraw { account: String, amount: u64 },
+    }
 }
 
 /// A type for managing accounts and their current currency balance
@@ -35,7 +38,7 @@ impl Accounts {
     /// Either deposits the `amount` provided into the `signer` account or adds the amount to the existing account.
     /// # Errors
     /// Attempted overflow
-    pub fn deposit(&mut self, signer: &str, amount: u64) -> Result<Tx, AccountingError> {
+    pub fn deposit(&mut self, signer: &str, amount: u64) -> Result<tx::Tx, error::AccountingError> {
         if let Some(account) = self.accounts.get_mut(signer) {
             (*account)
                 .checked_add(amount)
@@ -43,18 +46,18 @@ impl Accounts {
                     *account = r;
                     Some(r)
                 })
-                .ok_or(AccountingError::AccountOverFunded(
+                .ok_or(error::AccountingError::AccountOverFunded(
                     signer.to_string(),
                     amount,
                 ))
                 // Using map() here is an easy way to only manipulate the non-error result
-                .map(|_| Tx::Deposit {
+                .map(|_| tx::Tx::Deposit {
                     account: signer.to_string(),
                     amount,
                 })
         } else {
             self.accounts.insert(signer.to_string(), amount);
-            Ok(Tx::Deposit {
+            Ok(tx::Tx::Deposit {
                 account: signer.to_string(),
                 amount,
             })
@@ -64,7 +67,7 @@ impl Accounts {
     /// Withdraws the `amount` from the `signer` account.
     /// # Errors
     /// Attempted overflow
-    pub fn withdraw(&mut self, signer: &str, amount: u64) -> Result<Tx, AccountingError> {
+    pub fn withdraw(&mut self, signer: &str, amount: u64) -> Result<tx::Tx, error::AccountingError> {
         if let Some(account) = self.accounts.get_mut(signer) {
             account
                 .checked_sub(amount)
@@ -72,13 +75,13 @@ impl Accounts {
                     *account = r;
                     Some(r)
                 })
-                .ok_or(AccountUnderFunded(signer.to_string(), amount))
-                .map(|_| Tx::Withdraw {
+                .ok_or(error::AccountingError::AccountUnderFunded(signer.to_string(), amount))
+                .map(|_| tx::Tx::Withdraw {
                     account: signer.to_string(),
                     amount,
                 })
         } else {
-            Err(AccountingError::AccountNotFound(signer.to_string()))
+            Err(error::AccountingError::AccountNotFound(signer.to_string()))
         }
     }
 
@@ -91,15 +94,15 @@ impl Accounts {
         sender: &str,
         recipient: &str,
         amount: u64,
-    ) -> Result<(Tx, Tx), AccountingError> {
+    ) -> Result<(tx::Tx, tx::Tx), error::AccountingError> {
         let Some(_) = self.accounts.get_mut(sender) else {
-            return Err(AccountingError::AccountNotFound(sender.to_string()));
+            return Err(error::AccountingError::AccountNotFound(sender.to_string()));
         };
         let Some(_) = self.accounts.get_mut(recipient) else {
-            return Err(AccountingError::AccountNotFound(recipient.to_string()));
+            return Err(error::AccountingError::AccountNotFound(recipient.to_string()));
         };
         let Ok(withdraw) = self.withdraw(sender, amount) else {
-            return Err(AccountingError::AccountUnderFunded(
+            return Err(error::AccountingError::AccountUnderFunded(
                 sender.to_string(),
                 amount,
             ));
@@ -107,7 +110,7 @@ impl Accounts {
         let Ok(deposit) = self.deposit(recipient, amount) else {
             // return the amount to sender
             self.deposit(sender, amount)?;
-            return Err(AccountingError::AccountOverFunded(
+            return Err(error::AccountingError::AccountOverFunded(
                 recipient.to_string(),
                 amount,
             ));
@@ -158,10 +161,10 @@ fn main() {
     }
 }
 
-fn cmd_send(ledger: &mut Accounts, tx_log: &mut Vec<Tx>, amount: &&str, from: &&str, to: &&str) {
+fn cmd_send(ledger: &mut Accounts, tx_log: &mut Vec<tx::Tx>, amount: &&str, from: &&str, to: &&str) {
     if let Ok(amount) = amount.parse::<u64>() {
         match ledger.send(from, to, amount) {
-            Ok((tx1, tx2)) => tx_log.append(vec![tx1, tx2].as_mut()),
+            Ok((Tx1, Tx2)) => tx_log.append(vec![Tx1, Tx2].as_mut()),
             Err(e) => {
                 eprintln!("{:?}", e)
             }
@@ -171,10 +174,10 @@ fn cmd_send(ledger: &mut Accounts, tx_log: &mut Vec<Tx>, amount: &&str, from: &&
     };
 }
 
-fn cmd_deposit(ledger: &mut Accounts, tx_log: &mut Vec<Tx>, amount: &&str, signer: &&str) {
+fn cmd_deposit(ledger: &mut Accounts, tx_log: &mut Vec<tx::Tx>, amount: &&str, signer: &&str) {
     if let Ok(amount) = amount.parse::<u64>() {
         match ledger.deposit(signer, amount) {
-            Ok(tx) => tx_log.push(tx),
+            Ok(Tx) => tx_log.push(Tx),
             Err(e) => {
                 eprintln!("{:?}", e)
             }
@@ -184,7 +187,7 @@ fn cmd_deposit(ledger: &mut Accounts, tx_log: &mut Vec<Tx>, amount: &&str, signe
     };
 }
 
-fn cmd_withdraw(ledger: &mut Accounts, tx_log: &mut Vec<Tx>, amount: &&str, signer: &&str) {
+fn cmd_withdraw(ledger: &mut Accounts, tx_log: &mut Vec<tx::Tx>, amount: &&str, signer: &&str) {
     if let Ok(amount) = amount.parse::<u64>() {
         match ledger.withdraw(signer, amount) {
             Ok(tx) => tx_log.push(tx),
