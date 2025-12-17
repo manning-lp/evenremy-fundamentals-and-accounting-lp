@@ -1,41 +1,43 @@
-use crate::errors::AccountError;
-use crate::tx;
+use crate::{errors::AccountingError, tx::Tx};
 use std::collections::HashMap;
 
 /// A type for managing accounts and their current currency balance
 #[derive(Debug)]
 pub struct Accounts {
-    pub accounts: HashMap<String, u64>, // id to amount
+    accounts: HashMap<String, u64>,
 }
 
 impl Accounts {
     /// Returns an empty instance of the [`Accounts`] type
     pub fn new() -> Self {
         Accounts {
-            accounts: Default::default(),
+            accounts: HashMap::new(),
         }
     }
 
     /// Either deposits the `amount` provided into the `signer` account or adds the amount to the existing account.
     /// # Errors
     /// Attempted overflow
-    pub fn deposit(&mut self, signer: &str, amount: u64) -> Result<tx::Tx, AccountError> {
+    pub fn deposit(&mut self, signer: &str, amount: u64) -> Result<Tx, AccountingError> {
         if let Some(account) = self.accounts.get_mut(signer) {
             (*account)
                 .checked_add(amount)
-                .map(|r| {
+                .and_then(|r| {
                     *account = r;
                     Some(r)
                 })
-                .ok_or(AccountError::OverFunded(signer.to_string(), amount))
+                .ok_or(AccountingError::AccountOverFunded(
+                    signer.to_string(),
+                    amount,
+                ))
                 // Using map() here is an easy way to only manipulate the non-error result
-                .map(|_| tx::Tx::Deposit {
+                .map(|_| Tx::Deposit {
                     account: signer.to_string(),
                     amount,
                 })
         } else {
             self.accounts.insert(signer.to_string(), amount);
-            Ok(tx::Tx::Deposit {
+            Ok(Tx::Deposit {
                 account: signer.to_string(),
                 amount,
             })
@@ -45,21 +47,25 @@ impl Accounts {
     /// Withdraws the `amount` from the `signer` account.
     /// # Errors
     /// Attempted overflow
-    pub fn withdraw(&mut self, signer: &str, amount: u64) -> Result<tx::Tx, AccountError> {
+    pub fn withdraw(&mut self, signer: &str, amount: u64) -> Result<Tx, AccountingError> {
         if let Some(account) = self.accounts.get_mut(signer) {
-            account
+            (*account)
                 .checked_sub(amount)
-                .map(|r| {
+                .and_then(|r| {
                     *account = r;
                     Some(r)
                 })
-                .ok_or(AccountError::UnderFunded(signer.to_string(), amount))
-                .map(|_| tx::Tx::Withdraw {
+                .ok_or(AccountingError::AccountUnderFunded(
+                    signer.to_string(),
+                    amount,
+                ))
+                // Using map() here is an easy way to only manipulate the non-error result
+                .map(|_| Tx::Withdraw {
                     account: signer.to_string(),
                     amount,
                 })
         } else {
-            Err(AccountError::NotFound(signer.to_string()))
+            Err(AccountingError::AccountNotFound(signer.to_string()))
         }
     }
 
@@ -72,136 +78,168 @@ impl Accounts {
         sender: &str,
         recipient: &str,
         amount: u64,
-    ) -> Result<(tx::Tx, tx::Tx), AccountError> {
-        let Some(_) = self.accounts.get_mut(sender) else {
-            return Err(AccountError::NotFound(sender.to_string()));
-        };
-        let Some(_) = self.accounts.get_mut(recipient) else {
-            return Err(AccountError::NotFound(recipient.to_string()));
-        };
-        let Ok(withdraw) = self.withdraw(sender, amount) else {
-            return Err(AccountError::UnderFunded(sender.to_string(), amount));
-        };
-        let Ok(deposit) = self.deposit(recipient, amount) else {
-            // return the amount to sender
-            self.deposit(sender, amount)?;
-            return Err(AccountError::OverFunded(recipient.to_string(), amount));
-        };
-        Ok((withdraw, deposit))
+    ) -> Result<(Tx, Tx), AccountingError> {
+        if self.accounts.contains_key(sender)  // sender exists
+            && self.accounts.contains_key(recipient) // recipient exists
+            && self
+            .accounts
+            .get(sender)
+            .map(|amt| *amt >= amount) // sender has sufficient funds
+            .unwrap_or(false)
+        {
+            // The ? operator is a built-in shorthand for
+            // if let Err(e) = my_func_call() { return Err(e); }
+            let tx_withdraw = self.withdraw(sender, amount)?;
+            self.deposit(recipient, amount)
+                .map_err(|e| {
+                    // return the funds to the sender on error
+                    self.deposit(sender, amount).unwrap();
+                    e
+                })
+                .map(|tx_deposit| (tx_withdraw, tx_deposit))
+        } else {
+            if !self.accounts.contains_key(sender) {
+                Err(AccountingError::AccountNotFound(sender.to_string()))
+            } else {
+                Err(AccountingError::AccountNotFound(recipient.to_string()))
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::accounts::Accounts;
-    use crate::errors::AccountError;
-    use crate::tx;
+    use super::*;
 
     #[test]
     fn test_accounts_withdraw_underfunded() {
         let mut accounts = Accounts::new();
-        accounts.deposit("alice", 100).unwrap();
-        let error = accounts.withdraw("alice", 200);
-        let expected = Err(AccountError::UnderFunded("alice".to_string(), 200));
-        assert_eq!(error, expected);
+        accounts.deposit("a-key", 0).unwrap();
+        let actual = accounts.withdraw("a-key", 100);
+        assert_eq!(
+            actual,
+            Err(AccountingError::AccountUnderFunded(
+                "a-key".to_string(),
+                100
+            ))
+        );
     }
 
     #[test]
     fn test_accounts_deposit_overfunded() {
         let mut accounts = Accounts::new();
-        accounts.deposit("alice", 100).unwrap();
-        let error = accounts.deposit("alice", u64::MAX);
-        let expected = Err(AccountError::OverFunded("alice".to_string(), u64::MAX));
-        assert_eq!(error, expected);
+        accounts
+            .deposit("a-key", 1)
+            .expect("Initial deposit failed");
+        let actual = accounts.deposit("a-key", u64::MAX);
+        assert_eq!(
+            actual,
+            Err(AccountingError::AccountOverFunded(
+                "a-key".to_string(),
+                u64::MAX
+            ))
+        );
     }
 
     #[test]
-    fn test_accounts_not_found() {
+    fn test_accounts_deposit_works() {
         let mut accounts = Accounts::new();
-        let error = accounts.withdraw("alice", u64::MAX);
-        let expected = Err(AccountError::NotFound("alice".to_string()));
-        assert_eq!(error, expected);
+        let amt = 100;
+        let actual = accounts.deposit("a-key", amt);
+        assert_eq!(
+            actual,
+            Ok(Tx::Deposit {
+                account: "a-key".to_string(),
+                amount: amt
+            })
+        );
     }
 
     #[test]
-    fn test_accounts_deposit_success() {
+    fn test_accounts_withdraw_works() {
         let mut accounts = Accounts::new();
-        accounts.deposit("alice", 100).unwrap();
-        let tx = accounts.deposit("alice", 100);
-        let expected = Ok(tx::Tx::Deposit {
-            account: "alice".to_string(),
-            amount: 100,
-        });
-        assert_eq!(tx, expected);
+        let amt = 100;
+        accounts.deposit("a-key", amt).expect("Couldn't deposit");
+        let actual = accounts.withdraw("a-key", amt);
+        assert_eq!(
+            actual,
+            Ok(Tx::Withdraw {
+                account: "a-key".to_string(),
+                amount: amt
+            })
+        );
     }
 
     #[test]
-    fn test_accounts_withdraw_success() {
+    fn test_accounts_send_works() {
         let mut accounts = Accounts::new();
-        accounts.deposit("alice", u64::MAX).unwrap();
-        let tx = accounts.withdraw("alice", u64::MAX);
-        let expected = Ok(tx::Tx::Withdraw {
-            account: "alice".to_string(),
-            amount: u64::MAX,
-        });
-        assert_eq!(tx, expected);
+        let amt = 100;
+        accounts.deposit("a-key", amt).expect("Couldn't deposit");
+
+        // creating the receiver is also required
+        accounts.deposit("b-key", 0).expect("Couldn't deposit");
+
+        let (tx1, tx2) = accounts.send("a-key", "b-key", amt).expect("Send failed");
+        assert_eq!(
+            tx1,
+            Tx::Withdraw {
+                account: "a-key".to_string(),
+                amount: amt
+            }
+        );
+        assert_eq!(
+            tx2,
+            Tx::Deposit {
+                account: "b-key".to_string(),
+                amount: amt
+            }
+        );
+
+        let actual = accounts.withdraw("b-key", amt);
+        assert_eq!(
+            actual,
+            Ok(Tx::Withdraw {
+                account: "b-key".to_string(),
+                amount: amt
+            })
+        );
     }
 
     #[test]
-    fn test_send_account_not_found() {
+    fn test_accounts_send_underfunded_fails_and_rolls_back() {
         let mut accounts = Accounts::new();
-        let got = accounts.send("alice", "bob", u64::MAX);
-        let expected = Err(AccountError::NotFound("alice".to_string()));
-        assert_eq!(got, expected);
+        let amt = 100;
+        accounts.deposit("a-key", amt).expect("Couldn't deposit");
 
-        accounts.deposit("alice", 100).unwrap();
-        let got = accounts.send("alice", "bob", u64::MAX);
-        let expected = Err(AccountError::NotFound("bob".to_string()));
-        assert_eq!(got, expected);
+        // creating the receiver is also required
+        accounts.deposit("b-key", 0).expect("Couldn't deposit");
+
+        let actual = accounts.send("a-key", "b-key", amt + 1);
+        assert!(actual.is_err());
+        let expected: HashMap<String, u64> =
+            vec![("a-key".to_string(), amt), ("b-key".to_string(), 0)]
+                .into_iter()
+                .collect();
+        assert_eq!(accounts.accounts, expected);
     }
 
     #[test]
-    fn test_send_account_withdraw_error() {
+    fn test_accounts_send_overfunded_fails_and_rolls_back() {
         let mut accounts = Accounts::new();
-        accounts.deposit("alice", 100).unwrap();
-        accounts.deposit("bob", 100).unwrap();
-        let got = accounts.send("alice", "bob", u64::MAX);
-        let expected = Err(AccountError::UnderFunded("alice".to_string(), u64::MAX));
-        assert_eq!(got, expected);
-    }
+        let amt = 100;
+        accounts.deposit("a-key", amt).expect("Couldn't deposit");
 
-    #[test]
-    fn test_send_account_deposit_error() {
-        let mut accounts = Accounts::new();
-        accounts.deposit("alice", u64::MAX).unwrap();
-        accounts.deposit("bob", 100).unwrap();
-        let got = accounts.send("alice", "bob", u64::MAX);
-        let expected = Err(AccountError::OverFunded("bob".to_string(), u64::MAX));
-        assert_eq!(got, expected);
+        // creating the receiver is also required
+        accounts
+            .deposit("b-key", u64::MAX)
+            .expect("Couldn't deposit");
 
-        // accounts should be untouched
-        let amount = accounts.accounts.get("alice").unwrap();
-        assert_eq!(*amount, u64::MAX);
-        let amount = accounts.accounts.get("bob").unwrap();
-        assert_eq!(*amount, 100);
-    }
-
-    #[test]
-    fn test_send_account_success() {
-        let mut accounts = Accounts::new();
-        accounts.deposit("alice", 100).unwrap();
-        accounts.deposit("bob", 100).unwrap();
-        let got = accounts.send("alice", "bob", 100);
-        let expected = Ok((
-            tx::Tx::Withdraw {
-                account: "alice".to_string(),
-                amount: 100,
-            },
-            tx::Tx::Deposit {
-                account: "bob".to_string(),
-                amount: 100,
-            },
-        ));
-        assert_eq!(got, expected);
+        let actual = accounts.send("a-key", "b-key", 1);
+        assert!(actual.is_err());
+        let expected: HashMap<String, u64> =
+            vec![("a-key".to_string(), amt), ("b-key".to_string(), u64::MAX)]
+                .into_iter()
+                .collect();
+        assert_eq!(accounts.accounts, expected);
     }
 }

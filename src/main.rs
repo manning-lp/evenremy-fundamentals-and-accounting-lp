@@ -1,99 +1,67 @@
+use std::io;
 mod accounts;
 mod errors;
 mod tx;
-
-use std::io::{stdin, Write};
+use crate::accounts::Accounts;
 
 fn read_from_stdin(label: &str) -> String {
-    print!("{}", label);
-    std::io::stdout().flush().unwrap_or_default();
-    let mut line = String::new();
-    stdin().read_line(&mut line).unwrap_or_else(|_| {
-        line = "".to_string();
-        0
-    });
-
-    line.trim().to_string()
+    let mut buffer = String::new();
+    println!("{}", label);
+    io::stdin()
+        .read_line(&mut buffer)
+        .expect("Couldn't read from stdin");
+    buffer.trim().to_owned()
 }
 
 fn main() {
-    let mut ledger = accounts::Accounts::new();
-    let mut tx_log = vec![];
+    println!("Hello, accounting world!");
+
+    let mut ledger = Accounts::new();
     loop {
-        let line = read_from_stdin("cmd: ");
-        let cmd: Vec<&str> = line.split(" ").collect();
-        match cmd.as_slice() {
-            ["deposit", amount, "to", signer] => {
-                cmd_deposit(&mut ledger, &mut tx_log, amount, signer);
+        let input = read_from_stdin(
+            "Choose operation [deposit, withdraw, send, print, quit], confirm with return:",
+        );
+        match input.as_str() {
+            "deposit" => {
+                let account = read_from_stdin("Account:");
+
+                let raw_amount = read_from_stdin("Amount:").parse();
+                if let Ok(amount) = raw_amount {
+                    let _ = ledger.deposit(&account, amount);
+                    println!("Deposited {} into account '{}'", amount, account)
+                } else {
+                    eprintln!("Not a number: '{:?}'", raw_amount);
+                }
             }
-            ["withdraw", amount, "from", signer] => {
-                cmd_withdraw(&mut ledger, &mut tx_log, amount, signer);
+            "withdraw" => {
+                let account = read_from_stdin("Account:");
+                let raw_amount = read_from_stdin("Amount:").parse();
+                if let Ok(amount) = raw_amount {
+                    let _ = ledger.withdraw(&account, amount);
+                } else {
+                    eprintln!("Not a number: '{:?}'", raw_amount);
+                }
             }
-            ["send", amount, "from", from, "to", to] => {
-                cmd_send(&mut ledger, &mut tx_log, amount, from, to);
+            "send" => {
+                let sender = read_from_stdin("Sender Account:");
+                let recipient = read_from_stdin("Recipient Account:");
+                let raw_amount = read_from_stdin("Amount:").parse();
+                if let Ok(amount) = raw_amount {
+                    let _ = ledger.send(&sender, &recipient, amount);
+                } else {
+                    eprintln!("Not a number: '{:?}'", raw_amount);
+                }
             }
-            ["print"] => {
-                println!("{:?}", ledger)
+            "print" => {
+                println!("The ledger: {:?}", ledger);
             }
-            ["quit"] => {
-                return;
+            "quit" => {
+                println!("Quitting...");
+                break;
             }
-            _ => println!("Command '{}' not found", cmd.first().unwrap_or(&"")),
+            _ => {
+                eprintln!("Invalid option: '{}'", input);
+            }
         }
     }
-}
-
-fn cmd_send(
-    ledger: &mut accounts::Accounts,
-    tx_log: &mut Vec<tx::Tx>,
-    amount: &&str,
-    from: &&str,
-    to: &&str,
-) {
-    if let Ok(amount) = amount.parse::<u64>() {
-        match ledger.send(from, to, amount) {
-            Ok((tx1, tx2)) => tx_log.append(vec![tx1, tx2].as_mut()),
-            Err(e) => {
-                eprintln!("{:?}", e)
-            }
-        }
-    } else {
-        eprintln!("failed to parse '{}'", amount);
-    };
-}
-
-fn cmd_deposit(
-    ledger: &mut accounts::Accounts,
-    tx_log: &mut Vec<tx::Tx>,
-    amount: &&str,
-    signer: &&str,
-) {
-    if let Ok(amount) = amount.parse::<u64>() {
-        match ledger.deposit(signer, amount) {
-            Ok(tx) => tx_log.push(tx),
-            Err(e) => {
-                eprintln!("{:?}", e)
-            }
-        }
-    } else {
-        eprintln!("failed to parse '{}'", amount);
-    };
-}
-
-fn cmd_withdraw(
-    ledger: &mut accounts::Accounts,
-    tx_log: &mut Vec<tx::Tx>,
-    amount: &&str, // todo get rid of one ref
-    signer: &&str,
-) {
-    if let Ok(amount) = amount.parse::<u64>() {
-        match ledger.withdraw(signer, amount) {
-            Ok(tx) => tx_log.push(tx),
-            Err(e) => {
-                eprintln!("{:?}", e)
-            }
-        }
-    } else {
-        eprintln!("failed to parse '{}'", amount);
-    };
 }
