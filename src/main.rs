@@ -8,9 +8,9 @@ fn read_from_stdin(label: &str) -> String {
     print!("{}", label);
     std::io::stdout().flush().unwrap_or_default();
     let mut line = String::new();
-    stdin().read_line(&mut line).unwrap_or_else(|e| {
+    stdin().read_line(&mut line).unwrap_or_else(|_| {
         line = "".to_string();
-        return 0;
+        0
     });
 
     line.trim().to_string()
@@ -40,7 +40,7 @@ fn main() {
             }
             _ => println!(
                 "Command '{}' not found",
-                cmd.first().unwrap_or_else(|| { &"" })
+                cmd.first().unwrap_or(&"" )
             ),
         }
     }
@@ -55,7 +55,7 @@ fn cmd_send(
 ) {
     if let Ok(amount) = amount.parse::<u64>() {
         match ledger.send(from, to, amount) {
-            Ok((Tx1, Tx2)) => tx_log.append(vec![Tx1, Tx2].as_mut()),
+            Ok((tx1, tx2)) => tx_log.append(vec![tx1, tx2].as_mut()),
             Err(e) => {
                 eprintln!("{:?}", e)
             }
@@ -73,7 +73,7 @@ fn cmd_deposit(
 ) {
     if let Ok(amount) = amount.parse::<u64>() {
         match ledger.deposit(signer, amount) {
-            Ok(Tx) => tx_log.push(Tx),
+            Ok(tx) => tx_log.push(tx),
             Err(e) => {
                 eprintln!("{:?}", e)
             }
