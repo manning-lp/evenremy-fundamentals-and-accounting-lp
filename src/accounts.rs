@@ -27,10 +27,7 @@ impl Accounts {
                     *account = r;
                     Some(r)
                 })
-                .ok_or(AccountError::OverFunded(
-                    signer.to_string(),
-                    amount,
-                ))
+                .ok_or(AccountError::OverFunded(signer.to_string(), amount))
                 // Using map() here is an easy way to only manipulate the non-error result
                 .map(|_| tx::Tx::Deposit {
                     account: signer.to_string(),
@@ -56,10 +53,7 @@ impl Accounts {
                     *account = r;
                     Some(r)
                 })
-                .ok_or(AccountError::UnderFunded(
-                    signer.to_string(),
-                    amount,
-                ))
+                .ok_or(AccountError::UnderFunded(signer.to_string(), amount))
                 .map(|_| tx::Tx::Withdraw {
                     account: signer.to_string(),
                     amount,
@@ -86,18 +80,12 @@ impl Accounts {
             return Err(AccountError::NotFound(recipient.to_string()));
         };
         let Ok(withdraw) = self.withdraw(sender, amount) else {
-            return Err(AccountError::UnderFunded(
-                sender.to_string(),
-                amount,
-            ));
+            return Err(AccountError::UnderFunded(sender.to_string(), amount));
         };
         let Ok(deposit) = self.deposit(recipient, amount) else {
             // return the amount to sender
             self.deposit(sender, amount)?;
-            return Err(AccountError::OverFunded(
-                recipient.to_string(),
-                amount,
-            ));
+            return Err(AccountError::OverFunded(recipient.to_string(), amount));
         };
         Ok((withdraw, deposit))
     }
@@ -114,10 +102,7 @@ mod tests {
         let mut accounts = Accounts::new();
         accounts.deposit("alice", 100).unwrap();
         let error = accounts.withdraw("alice", 200);
-        let expected = Err(AccountError::UnderFunded(
-            "alice".to_string(),
-            200,
-        ));
+        let expected = Err(AccountError::UnderFunded("alice".to_string(), 200));
         assert_eq!(error, expected);
     }
 
@@ -126,10 +111,7 @@ mod tests {
         let mut accounts = Accounts::new();
         accounts.deposit("alice", 100).unwrap();
         let error = accounts.deposit("alice", u64::MAX);
-        let expected = Err(AccountError::OverFunded(
-            "alice".to_string(),
-            u64::MAX,
-        ));
+        let expected = Err(AccountError::OverFunded("alice".to_string(), u64::MAX));
         assert_eq!(error, expected);
     }
 
@@ -184,10 +166,7 @@ mod tests {
         accounts.deposit("alice", 100).unwrap();
         accounts.deposit("bob", 100).unwrap();
         let got = accounts.send("alice", "bob", u64::MAX);
-        let expected = Err(AccountError::UnderFunded(
-            "alice".to_string(),
-            u64::MAX,
-        ));
+        let expected = Err(AccountError::UnderFunded("alice".to_string(), u64::MAX));
         assert_eq!(got, expected);
     }
 
@@ -197,17 +176,15 @@ mod tests {
         accounts.deposit("alice", u64::MAX).unwrap();
         accounts.deposit("bob", 100).unwrap();
         let got = accounts.send("alice", "bob", u64::MAX);
-        let expected = Err(AccountError::OverFunded(
-            "bob".to_string(),
-            u64::MAX,
-        ));
+        let expected = Err(AccountError::OverFunded("bob".to_string(), u64::MAX));
         assert_eq!(got, expected);
 
         // accounts should be untouched
         let amount = accounts.accounts.get("alice").unwrap();
         assert_eq!(*amount, u64::MAX);
         let amount = accounts.accounts.get("bob").unwrap();
-        assert_eq!(*amount, 100);    }
+        assert_eq!(*amount, 100);
+    }
 
     #[test]
     fn test_send_account_success() {

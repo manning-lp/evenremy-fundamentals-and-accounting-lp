@@ -38,10 +38,7 @@ fn main() {
             ["quit"] => {
                 return;
             }
-            _ => println!(
-                "Command '{}' not found",
-                cmd.first().unwrap_or(&"" )
-            ),
+            _ => println!("Command '{}' not found", cmd.first().unwrap_or(&"")),
         }
     }
 }
